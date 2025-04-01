@@ -1,0 +1,11 @@
+[workspace]
+members = [ "cert-key-file", "common","rwebc", "rwebc-demo", "rwebs"]
+
+resolver = "2"
+
+[profile.release]
+panic = 'abort'
+strip = true
+opt-level = 'z'
+lto=true
+codegen-units = 1
