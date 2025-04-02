@@ -4,10 +4,10 @@ use std::{
 use rustls::pki_types::pem::PemObject;
 use common::mac::Mac;
 use quinn::{Connection, Endpoint, Incoming, RecvStream, SendStream, ServerConfig};
-use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpStream, sync::RwLock};
+use tokio::{io::{self, AsyncRead, AsyncWrite, AsyncWriteExt}, net::TcpStream, sync::RwLock};
 
-const CER_BIN:&[u8] = include_bytes!("E:/reform.cer");
-const KEY_BIN:&[u8] = include_bytes!("E:/reform.key");
+const CER_BIN:&[u8] = include_bytes!("../../reform.cer");
+const KEY_BIN:&[u8] = include_bytes!("../../reform.key");
 const KEEPALIVE_INTERVAL_MILLIS:u64=3000;
 const IDLE_TIMEOUT_MILLIS:u32=10_000;
 
@@ -35,7 +35,7 @@ impl QuicServer{
         if let Some(conn) = peers.get(&mac){
             if let Ok(stream) = conn.open_bi().await{
                 drop(peers);
-                translate(tcp_stream,stream,header_bytes).await;
+                translate(tcp_stream,stream,header_bytes).await.unwrap_or_default();
             }else{
                 drop(peers);
                 let body = "设备未连接";
@@ -60,39 +60,14 @@ impl QuicServer{
     }
 }
 
-async fn translate(tcp_stream:TcpStream,(mut bi_send,mut bi_recv):(SendStream,RecvStream),header_bytes:Vec<u8>){
-    let (mut tcp_recv,mut tcp_send) = tcp_stream.into_split();
-    let a = tokio::spawn(async move{
-        let mut buf = [0u8; 256*256];
-        if let Ok(_) = bi_send.write_all(&header_bytes).await{//header头写入
-            loop{
-                if let Ok(len) = tcp_recv.read(&mut buf).await{
-                    if let Err(e) = bi_send.write_all(&buf[..len]).await{
-                        println!("tcp send error:{}",e);
-                        break;
-                    }
-                }else{
-                    break
-                }
-            }
-        }
-    });
-    let b = tokio::spawn(async move{
-        let mut buf = [0u8; 256*256];
-        loop{
-            if let Ok(Some(len)) = bi_recv.read(&mut buf).await{
-                if let Err(e) = tcp_send.write_all(&buf[..len]).await{
-                    println!("quic send error:{}",e);
-                    break;
-                }
-            }else{
-                break
-            }
-        }
-    });
+async fn translate(tcp_stream:TcpStream,(mut bi_send,bi_recv):(SendStream,RecvStream),header_bytes:Vec<u8>)->Result<(),Box<dyn Error+Send+Sync>>{
+    bi_send.write_all(&header_bytes).await?;
+    let (tcp_recv,tcp_send) = tcp_stream.into_split();    
+    let a= tokio::spawn(async_copy(tcp_recv, bi_send));
+    let b = tokio::spawn(async_copy(bi_recv, tcp_send));
     tokio::select! {
-        _ = a => {},
-        _ = b => {},
+        _ = a => Ok(()),
+        _ = b => Ok(()),
     }
 }
 
@@ -104,12 +79,12 @@ async fn handle_incomming(incoming:Incoming,peers:Arc<RwLock<HashMap<Mac,Connect
                 let mut peers_s = peers.write().await;
                 peers_s.insert(buf.into(), conn.clone());
                 drop(peers_s);
-                println!("node_mac online:{}",Mac::from(buf));
+                log::info!("node_mac online:{}",Mac::from(buf));
                 uni_stream(&mut uni).await;
                 let mut peers_s = peers.write().await;
                 peers_s.remove(&buf.into());
                 drop(peers_s);
-                println!("node_mac offline:{}",Mac::from(buf));
+                log::info!("node_mac offline:{}",Mac::from(buf));
             }
         }
     }
@@ -119,7 +94,6 @@ async fn uni_stream(stream:&mut quinn::RecvStream){
     let mut buf = [0x00; 6];
     loop{
         if let Ok(_) = stream.read_exact(&mut buf).await{
-            //println!("node_mac:{}",Mac::from(buf));
         }else{
             break
         }
@@ -137,7 +111,14 @@ fn configure_host_server(cert_der:&[u8],priv_key:&[u8]) -> Result<ServerConfig, 
     Arc::get_mut(&mut server_config.transport).ok_or("none mutable")?
         .keep_alive_interval(Some(std::time::Duration::from_millis(KEEPALIVE_INTERVAL_MILLIS)))
         .max_idle_timeout(Some(quinn::IdleTimeout::from(quinn::VarInt::from_u32(IDLE_TIMEOUT_MILLIS))))
-        .max_concurrent_bidi_streams(100_u8.into())
-        .max_concurrent_uni_streams(100_u8.into());
+        .max_concurrent_bidi_streams(10000_u16.into())
+        .max_concurrent_uni_streams(1000_u16.into());
     Ok(server_config)
+}
+
+async fn async_copy<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
+    mut reader: R,
+    mut writer: W,
+) -> io::Result<u64> {
+    io::copy(&mut reader, &mut writer).await
 }

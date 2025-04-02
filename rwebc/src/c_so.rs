@@ -20,24 +20,36 @@ pub extern "C" fn quic_client_run(
     mac_addr: *const c_char,
 ) -> QuicError {
     // 转换C字符串到Rust字符串
-    let server_host = unsafe { CStr::from_ptr(server_host)}.to_str().unwrap();
-    let proxy_addr = unsafe { CStr::from_ptr(proxy_addr)}.to_str().unwrap();
-    let proxy_addr = std::sync::Arc::new(proxy_addr.to_string());
-    let server_port = server_port as u16;
-    let mac = unsafe { CStr::from_ptr(mac_addr)}.to_str().unwrap();
-    let mac:Mac = mac.try_into().unwrap();
-
-    // 创建运行时
-    let rt = match tokio::runtime::Runtime::new() {
-        Ok(rt) => rt,
-        Err(_) => return QuicError::RuntimeError,
-    };
-
-    // 执行异步代码
-    match rt.block_on(run(
-        server_host,server_port,proxy_addr,mac
-    )) {
-        Ok(_) => QuicError::Success,
-        Err(_) => QuicError::ConnectionFailed,
+    if let Ok(server_host) = unsafe { CStr::from_ptr(server_host).to_str() } {
+        if server_host.is_empty() {
+            return QuicError::InvalidArgs;
+        }
+        if let Ok(proxy_addr) = unsafe { CStr::from_ptr(proxy_addr).to_str() } {
+            if proxy_addr.is_empty() {
+                return QuicError::InvalidArgs;
+            }
+            if let Ok(mac_addr) = unsafe { CStr::from_ptr(mac_addr).to_str() } {
+                if let Ok(mac) = mac_addr.parse::<Mac>() {
+                    let rt = match tokio::runtime::Runtime::new() {
+                        Ok(rt) => rt,
+                        Err(_) => return QuicError::RuntimeError,
+                    };
+                    match rt.block_on(run(
+                        server_host,server_port as u16,std::sync::Arc::new(proxy_addr.to_string()),mac
+                    )) {
+                        Ok(_) => QuicError::Success,
+                        Err(_) => QuicError::ConnectionFailed,
+                    }
+                } else {
+                    QuicError::InvalidArgs
+                }
+            } else {
+                QuicError::InvalidArgs
+            }
+        } else {
+            QuicError::InvalidArgs
+        }
+    } else {
+        QuicError::InvalidArgs
     }
 }

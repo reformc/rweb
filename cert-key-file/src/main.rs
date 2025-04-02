@@ -11,8 +11,8 @@ struct Args {
     /// 域名。
     #[clap(long,default_value = "reform")]
     host: String,
-    /// 文件名。
-    #[clap(long,short,default_value = "E:/")]
+    /// 文件路径。
+    #[clap(long,short,default_value = "")]
     path: String
 }
 

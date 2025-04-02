@@ -4,6 +4,5 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-#tokio = {version = "*",features = ["rt","macros","rt-multi-thread"]}
-#rwebc = { path = "../rwebc" }
 libloading = { version = "*"}
+clap = { version = "*", features = ["derive"] }
