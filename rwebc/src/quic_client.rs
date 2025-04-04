@@ -42,7 +42,7 @@ fn configure_host_client(cert_der:&[u8]) -> ClientConfig {
 
 pub async fn run(server_host:&str,server_port:u16,proxy_addr:Arc<Url>,mac:Mac)->Result<(),Box<dyn Error+Send+Sync>>{
     let server_addr = (server_host, server_port).to_socket_addrs()?.next().ok_or("can't resolve")?;
-    let bind_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0);
+    let bind_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0);
     let client = make_client_endpoint(bind_addr)?;
     let conn = client.connect(server_addr, "reform")?;
     let connection = conn.await?;
@@ -93,9 +93,9 @@ async fn handle_bi((send_stream, mut recv_stream):(SendStream,RecvStream),proxy_
     }
 }
 
-async fn http_translate((mut send_stream, mut recv_stream):(SendStream,RecvStream),proxy_addr:Arc<Url>,mut header:Header)->Result<(),Box<dyn Error+Send+Sync>>{
+async fn http_translate((mut send_stream, mut recv_stream):(SendStream,RecvStream),proxy_addr:Arc<Url>,header:Header)->Result<(),Box<dyn Error+Send+Sync>>{
     let host = proxy_addr.host_str().ok_or("proxy_addr have no host")?.to_string();
-    header.set("Host".to_string(), host.clone());
+    //header.set("Host".to_string(), host.clone());
     match proxy_addr.scheme(){
         "http" => {
             let addr = if host.contains(":"){host.clone()}else{host+":80"};
