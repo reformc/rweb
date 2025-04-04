@@ -6,3 +6,5 @@ edition = "2024"
 [dependencies]
 libloading = { version = "*"}
 clap = { version = "*", features = ["derive"] }
+simple_logger = "*"
+log = { version = "*" }

@@ -21,14 +21,8 @@ pub async fn run(){
     let opts = Opts::parse();
     let quic_s = quic_server::QuicServer::default();
     let peers = quic_s.clone();
-    let a = tokio::spawn(async move{
-        quic_s.start(opts.port).await.unwrap();
-    });
-    let b = tokio::spawn(async move{
-        http_server::run(opts.port,peers).await;
-    });
     tokio::select! {
-        _ = a => {},
-        _ = b => {},
+        _ = quic_s.start(opts.port) => {},
+        _ = http_server::run(opts.port,peers) => {},
     }
 }

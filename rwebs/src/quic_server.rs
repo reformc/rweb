@@ -4,7 +4,7 @@ use std::{
 use rustls::pki_types::pem::PemObject;
 use common::mac::Mac;
 use quinn::{Connection, Endpoint, Incoming, RecvStream, SendStream, ServerConfig};
-use tokio::{io::{self, AsyncRead, AsyncWrite, AsyncWriteExt}, net::TcpStream, sync::RwLock};
+use tokio::{io::AsyncWriteExt, net::TcpStream, sync::RwLock};
 
 const CER_BIN:&[u8] = include_bytes!("../../reform.cer");
 const KEY_BIN:&[u8] = include_bytes!("../../reform.key");
@@ -21,6 +21,7 @@ impl QuicServer{
     pub async fn start(&self,port:u16)->Result<(),Box<dyn Error>>{
         let bind_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port);
         let endpoint = make_server_udp_endpoint(bind_addr,CER_BIN,KEY_BIN)?;
+        log::info!("quic server listen on {}",bind_addr);
         while let Some(conn) = endpoint.accept().await{
             let peers = self.peers.clone();
             tokio::spawn(async move {
@@ -60,14 +61,12 @@ impl QuicServer{
     }
 }
 
-async fn translate(tcp_stream:TcpStream,(mut bi_send,bi_recv):(SendStream,RecvStream),header_bytes:Vec<u8>)->Result<(),Box<dyn Error+Send+Sync>>{
+async fn translate(tcp_stream:TcpStream,(mut bi_send,mut bi_recv):(SendStream,RecvStream),header_bytes:Vec<u8>)->Result<(),Box<dyn Error+Send+Sync>>{
     bi_send.write_all(&header_bytes).await?;
-    let (tcp_recv,tcp_send) = tcp_stream.into_split();    
-    let a= tokio::spawn(async_copy(tcp_recv, bi_send));
-    let b = tokio::spawn(async_copy(bi_recv, tcp_send));
+    let (mut tcp_recv,mut tcp_send) = tcp_stream.into_split();
     tokio::select! {
-        _ = a => Ok(()),
-        _ = b => Ok(()),
+        _ = tokio::io::copy(&mut tcp_recv, &mut bi_send) => Ok(()),
+        _ = tokio::io::copy(&mut bi_recv, &mut tcp_send) => Ok(()),
     }
 }
 
@@ -114,11 +113,4 @@ fn configure_host_server(cert_der:&[u8],priv_key:&[u8]) -> Result<ServerConfig, 
         .max_concurrent_bidi_streams(10000_u16.into())
         .max_concurrent_uni_streams(1000_u16.into());
     Ok(server_config)
-}
-
-async fn async_copy<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
-    mut reader: R,
-    mut writer: W,
-) -> io::Result<u64> {
-    io::copy(&mut reader, &mut writer).await
 }

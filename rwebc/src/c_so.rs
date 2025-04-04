@@ -1,6 +1,7 @@
 use std::ffi::CStr;
 use std::os::raw::{c_int,c_char};
 use common::mac::Mac;
+use url::Url;
 use super::quic_client::run;
 
 #[repr(C)]
@@ -28,23 +29,28 @@ pub extern "C" fn quic_client_run(
             if proxy_addr.is_empty() {
                 return QuicError::InvalidArgs;
             }
-            if let Ok(mac_addr) = unsafe { CStr::from_ptr(mac_addr).to_str() } {
-                if let Ok(mac) = mac_addr.parse::<Mac>() {
-                    let rt = match tokio::runtime::Runtime::new() {
-                        Ok(rt) => rt,
-                        Err(_) => return QuicError::RuntimeError,
-                    };
-                    match rt.block_on(run(
-                        server_host,server_port as u16,std::sync::Arc::new(proxy_addr.to_string()),mac
-                    )) {
-                        Ok(_) => QuicError::Success,
-                        Err(_) => QuicError::ConnectionFailed,
+            match proxy_addr.parse::<Url>(){
+                Ok(url) => {
+                    if let Ok(mac_addr) = unsafe { CStr::from_ptr(mac_addr).to_str() } {
+                        if let Ok(mac) = mac_addr.parse::<Mac>() {
+                            let rt = match tokio::runtime::Runtime::new() {
+                                Ok(rt) => rt,
+                                Err(_) => return QuicError::RuntimeError,
+                            };
+                            match rt.block_on(run(
+                                server_host,server_port as u16,std::sync::Arc::new(url),mac
+                            )) {
+                                Ok(_) => QuicError::Success,
+                                Err(_) => QuicError::ConnectionFailed,
+                            }
+                        } else {
+                            QuicError::InvalidArgs
+                        }
+                    } else {
+                        QuicError::InvalidArgs
                     }
-                } else {
-                    QuicError::InvalidArgs
-                }
-            } else {
-                QuicError::InvalidArgs
+                },
+                Err(_) => return QuicError::InvalidArgs,
             }
         } else {
             QuicError::InvalidArgs

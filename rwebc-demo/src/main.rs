@@ -16,7 +16,7 @@ struct Opts {
     #[clap(long, default_value = "5677")]
     server_port: u16,
     ///本地http_proxy端口，启动后会监听此端口，浏览器可以设置http代理地址为此端口。
-    #[clap(short, long, default_value = "192.168.31.121:80")]
+    #[clap(short, long, default_value = "https://www.baidu.com")]
     proxy_addr: String,
     ///rwebs的设备地址
     #[clap(short, long, default_value = "aabbccddeeff")]
@@ -24,6 +24,7 @@ struct Opts {
 }
 
 fn main(){
+    simple_logger::init_with_level(log::Level::Info).unwrap();
     #[cfg(target_os = "windows")]
     let lib_path = "target/release/rwebc.dll";
     #[cfg(target_os = "linux")]

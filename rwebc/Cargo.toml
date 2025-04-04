@@ -10,6 +10,8 @@ edition = "2024"
 [dependencies]
 tokio = {version = "*",features = ["rt","macros","rt-multi-thread","io-util"]}
 quinn = "*"
-rustls = "*"
+rustls = {version = "*"}
+tokio-rustls = {version = "*"}
 common = { path = "../common" }
-log = "*"
+url = "*"
+once_cell = "*"

@@ -1,2 +1,3 @@
 pub mod mac;
-pub mod header;
+pub mod io;
+pub use io::header::{get_header,Header};

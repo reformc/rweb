@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use tokio::io::{AsyncRead, AsyncReadExt};
 
 #[allow(unused)]
 #[derive(Debug,Clone)]
@@ -8,7 +9,6 @@ pub struct Header{
     pub version:String,
     pub header:HashMap<String,String>
 }
-
 
 #[allow(unused)]
 impl Header{
@@ -82,6 +82,20 @@ impl Into<Vec<u8>> for Header{
     }
 }
 
-pub trait HeaderStream{
-    fn read(&mut self,buf:&mut [u8])->Result<usize,Box<dyn std::error::Error+Send+Sync>>;
+pub async fn get_header<R: AsyncRead + Unpin>(stream:&mut R)->Result<Header,Box<dyn std::error::Error+Send+Sync>>{
+    let mut buf = Vec::new();
+    let mut header = [0u8; 1];
+    loop{ 
+        if let Ok(_) = stream.read_exact(&mut header).await{
+            buf.push(header[0]);
+            if buf.ends_with(b"\r\n\r\n"){
+                break
+            }else{
+                if buf.len() > 256*256{
+                    return Err("header too long".into())
+                }
+            }
+        }
+    }
+    Ok(buf.into())
 }
