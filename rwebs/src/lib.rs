@@ -13,6 +13,12 @@ struct Opts {
     ///web端口
     #[clap(short, long, default_value = "5677")]
     port: u16,
+    ///key文件路径
+    #[clap(short, long, default_value = "reform.key")]
+    key: String,
+    ///证书文件路径
+    #[clap(short, long, default_value = "reform.cert")]
+    cert: String,
 }
 
 #[tokio::main]
@@ -21,8 +27,14 @@ pub async fn run(){
     let opts = Opts::parse();
     let quic_s = quic_server::QuicServer::default();
     let peers = quic_s.clone();
+    rustls::crypto::aws_lc_rs::default_provider()
+    .install_default()
+    .expect("failed to install default crypto provider");
+    let key = std::fs::read_to_string(opts.key).unwrap();
+    let cert = std::fs::read_to_string(opts.cert).unwrap();
     tokio::select! {
         _ = quic_s.start(opts.port) => {},
-        _ = http_server::run(opts.port,peers) => {},
+        //_ = http_server::run(opts.port,peers.clone()) => {},//如果用http代理，必须使用proxy_change_header，如果用https则不用。
+        _ = http_server::run_https(opts.port,peers.clone(),&key,&cert) => {},
     }
 }

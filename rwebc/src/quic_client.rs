@@ -7,7 +7,7 @@ use url::Url;
 use tokio_rustls::TlsConnector;
 use rustls::{client::danger::{ServerCertVerified,ServerCertVerifier},pki_types::ServerName};
 
-const KEEPALIVE_INTERVAL_MILLIS:u64=3000;
+const KEEPALIVE_INTERVAL_MILLIS:u64=3_000;
 const IDLE_TIMEOUT_MILLIS:u32=10_000;
 const CER_BIN:&[u8] = include_bytes!("../../reform.cer");
 

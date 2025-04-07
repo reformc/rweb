@@ -1,10 +1,10 @@
 use std::{
-    collections::HashMap, error::Error, net::{IpAddr, Ipv4Addr, SocketAddr}, sync::Arc
+    collections::HashMap, error::Error, net::{IpAddr, Ipv4Addr, SocketAddr}, sync::Arc, time::Duration
 };
 use rustls::pki_types::pem::PemObject;
 use common::mac::Mac;
 use quinn::{Connection, Endpoint, Incoming, RecvStream, SendStream, ServerConfig};
-use tokio::{io::AsyncWriteExt, net::TcpStream, sync::RwLock};
+use tokio::{io::{AsyncRead, AsyncWrite, AsyncWriteExt}, sync::RwLock, time::timeout};
 
 const CER_BIN:&[u8] = include_bytes!("../../reform.cer");
 const KEY_BIN:&[u8] = include_bytes!("../../reform.key");
@@ -22,21 +22,29 @@ impl QuicServer{
         let bind_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port);
         let endpoint = make_server_udp_endpoint(bind_addr,CER_BIN,KEY_BIN)?;
         log::info!("quic server listen on {}",bind_addr);
-        while let Some(conn) = endpoint.accept().await{
-            let peers = self.peers.clone();
-            tokio::spawn(async move {
-                handle_incomming(conn,peers).await;
-            });
+        loop{
+            match endpoint.accept().await{
+                Some(conn)=>{
+                    let peers = self.peers.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = handle_incomming(conn,peers).await{
+                            log::warn!("handle incomming error:{}",e);
+                        }
+                    });
+                },
+                None=>{
+                    log::warn!("endpoint accept none");
+                }
+            }
         }
-        Ok(())
     }
 
-    pub async fn translate(&self,mac:Mac,mut tcp_stream:TcpStream,header_bytes:Vec<u8>)->Result<(),Box<dyn Error+Send+Sync>>{
+    pub async fn translate<T:AsyncRead+AsyncWrite+Unpin>(&self,mac:Mac,mut tcp_stream:T,header_bytes:Vec<u8>)->Result<(),Box<dyn Error+Send+Sync>>{
         let peers = self.peers.read().await;
         if let Some(conn) = peers.get(&mac){
             if let Ok(stream) = conn.open_bi().await{
                 drop(peers);
-                translate(tcp_stream,stream,header_bytes).await.unwrap_or_default();
+                translate(tcp_stream,stream,header_bytes).await?;
             }else{
                 drop(peers);
                 let body = "设备未连接";
@@ -61,41 +69,40 @@ impl QuicServer{
     }
 }
 
-async fn translate(tcp_stream:TcpStream,(mut bi_send,mut bi_recv):(SendStream,RecvStream),header_bytes:Vec<u8>)->Result<(),Box<dyn Error+Send+Sync>>{
+async fn translate<T:AsyncRead+AsyncWrite+Unpin>(tcp_stream:T,(mut bi_send,mut bi_recv):(SendStream,RecvStream),header_bytes:Vec<u8>)->Result<(),Box<dyn Error+Send+Sync>>{
     bi_send.write_all(&header_bytes).await?;
-    let (mut tcp_recv,mut tcp_send) = tcp_stream.into_split();
+    let (mut tcp_recv,mut tcp_send) = tokio::io::split(tcp_stream);
     tokio::select! {
-        _ = tokio::io::copy(&mut tcp_recv, &mut bi_send) => Ok(()),
-        _ = tokio::io::copy(&mut bi_recv, &mut tcp_send) => Ok(()),
+        a = tokio::io::copy(&mut tcp_recv, &mut bi_send) => Ok(a.map(|_|())?),
+        b = tokio::io::copy(&mut bi_recv, &mut tcp_send) => Ok(b.map(|_|())?),
     }
 }
 
-async fn handle_incomming(incoming:Incoming,peers:Arc<RwLock<HashMap<Mac,Connection>>>){
-    if let Ok(conn) = incoming.await{
-        if let Ok(mut uni) = conn.accept_uni().await{
-            let mut buf = [0x00;6];
-            if let Ok(_) = uni.read_exact(&mut buf).await{
-                let mut peers_s = peers.write().await;
-                peers_s.insert(buf.into(), conn.clone());
-                drop(peers_s);
-                log::info!("node_mac online:{}",Mac::from(buf));
-                uni_stream(&mut uni).await;
-                let mut peers_s = peers.write().await;
-                peers_s.remove(&buf.into());
-                drop(peers_s);
-                log::info!("node_mac offline:{}",Mac::from(buf));
-            }
-        }
+async fn handle_incomming(incoming:Incoming,peers:Arc<RwLock<HashMap<Mac,Connection>>>)->Result<(),Box<dyn Error+Send+Sync>>{
+    let conn = incoming.await?;
+    let mut uni = conn.accept_uni().await?;
+    let mut buf = [0x00;6];
+    timeout(Duration::from_secs(5), uni.read_exact(&mut buf)).await??;
+    let mut peers_s = peers.write().await;
+    if let Some(_) = peers_s.get(&buf.into()){
+        log::warn!("node_mac already online:{}",Mac::from(buf));
+        return Ok(());
     }
+    peers_s.insert(buf.into(), conn.clone());
+    drop(peers_s);
+    log::info!("node_mac online:{}",Mac::from(buf));
+    uni_stream(&mut uni).await?;
+    let mut peers_s = peers.write().await;
+    peers_s.remove(&buf.into());
+    drop(peers_s);
+    log::info!("node_mac offline:{}",Mac::from(buf));
+    Ok(())
 }
 
-async fn uni_stream(stream:&mut quinn::RecvStream){
+async fn uni_stream(stream:&mut quinn::RecvStream)->Result<(),Box<dyn Error+Send+Sync>>{
     let mut buf = [0x00; 6];
     loop{
-        if let Ok(_) = stream.read_exact(&mut buf).await{
-        }else{
-            break
-        }
+        timeout(Duration::from_millis(IDLE_TIMEOUT_MILLIS as u64),stream.read_exact(&mut buf)).await.unwrap().unwrap();
     }
 }
 
@@ -111,6 +118,6 @@ fn configure_host_server(cert_der:&[u8],priv_key:&[u8]) -> Result<ServerConfig, 
         .keep_alive_interval(Some(std::time::Duration::from_millis(KEEPALIVE_INTERVAL_MILLIS)))
         .max_idle_timeout(Some(quinn::IdleTimeout::from(quinn::VarInt::from_u32(IDLE_TIMEOUT_MILLIS))))
         .max_concurrent_bidi_streams(10000_u16.into())
-        .max_concurrent_uni_streams(1000_u16.into());
+        .max_concurrent_uni_streams(10000_u16.into());
     Ok(server_config)
 }

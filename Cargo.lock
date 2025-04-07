@@ -1172,6 +1172,7 @@ dependencies = [
  "rustls",
  "simple_logger",
  "tokio",
+ "tokio-rustls",
 ]
 
 [[package]]

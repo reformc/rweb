@@ -1,3 +1,4 @@
 /target
-reform.cer
-reform.key
+*.cer
+*.key
+*.pem

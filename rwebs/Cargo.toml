@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 tokio = {version = "*",features = ["rt","macros","rt-multi-thread","sync","io-util"] }
+tokio-rustls = {version = "*"}
 simple_logger = "*"
 log = "*"
 clap = {version = "*", features = ["derive"] }
