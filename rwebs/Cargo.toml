@@ -5,10 +5,14 @@ edition = "2024"
 
 [dependencies]
 tokio = {version = "*",features = ["rt","macros","rt-multi-thread","sync","io-util"] }
-tokio-rustls = {version = "*"}
+tokio-rustls = {version = "0.26.2"}
 simple_logger = "*"
 log = "*"
 clap = {version = "*", features = ["derive"] }
-quinn = "*"
+quinn = "0.11.7"
 rustls = "*"
 common = { path = "../common" }
+
+# console-subscriber = "0.4.1"
+# tracing = "0.1"
+# tracing-subscriber = { version = "0.3", features = ["env-filter"] }

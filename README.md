@@ -28,3 +28,5 @@ proxy-change-header:如果需要使用设备的http_proxy功能，需要运行�
     proxy_addr必须带端口，因为使用的是tcp层代理，mac为设备标签，可以使用mac地址，每个设备的mac必须唯一，不可重复。
 4.1 如果不需要使用http_proxy，那么可以在任何地方使用浏览器打开aabbccddeeff.abc.com即可访问aabbccddeeff这台设备上的127.0.0.1:80了
 4.2 如果需要使用http_proxy,那么在自己电脑上运行cargo run --bin proxy-change-header -- -p=5678 -d=aabbccddeeff.abc.com:5677,然后设置xshell或者浏览器的代理为http代理，代理地址为127.0.0.1:5678,那么就可以使用设备来代理上网了。可以访问设备所处网络里的网络
+
+export RUSTFLAGS="--cfg tokio_unstable"

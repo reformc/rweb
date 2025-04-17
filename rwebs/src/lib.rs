@@ -17,13 +17,11 @@ struct Opts {
     #[clap(short, long, default_value = "reform.key")]
     key: String,
     ///证书文件路径
-    #[clap(short, long, default_value = "reform.cert")]
+    #[clap(short, long, default_value = "reform.cer")]
     cert: String,
 }
 
-#[tokio::main]
 pub async fn run(){
-    simple_logger::init_with_level(log::Level::Info).unwrap();
     let opts = Opts::parse();
     let quic_s = quic_server::QuicServer::default();
     let peers = quic_s.clone();
