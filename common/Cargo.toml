@@ -4,4 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-tokio = {version = "*",default-features = false}
+tokio = {version = "*",default-features = false,features = ["io-util","net"]}
+url = {version = "*"}
+serde = {version = "*",features = ["derive"]}
+
+[dev-dependencies]
+serde_json = {version = "*"}

@@ -4,26 +4,26 @@ use crate::quic_server::QuicServer;
 use rustls::{pki_types::pem::PemObject, ServerConfig};
 use tokio_rustls::TlsAcceptor;
 
-pub async fn run(port:u16,quic_server:QuicServer) -> Result<(), Box<dyn std::error::Error+Send+Sync>> {
-    let listener = TcpListener::bind(format!("0.0.0.0:{}",port)).await?;
-    log::info!("http_server listen on {}",listener.local_addr()?);
-    loop {
-        match listener.accept().await {
-            Ok((stream, addr)) => {
-                log::debug!("accept from {}", addr);
-                let quic_server = quic_server.clone();
-                tokio::spawn(async move {
-                    if let Err(e) = handle_client(stream,quic_server,None).await{
-                        log::warn!("handle client error:{}",e);
-                    }
-                });
-            }
-            Err(e) => {
-                log::warn!("accept error:{}", e);
-            }
-        }
-    }
-}
+// pub async fn run(port:u16,quic_server:QuicServer) -> Result<(), Box<dyn std::error::Error+Send+Sync>> {
+//     let listener = TcpListener::bind(format!("0.0.0.0:{}",port)).await?;
+//     log::info!("http_server listen on {}",listener.local_addr()?);
+//     loop {
+//         match listener.accept().await {
+//             Ok((stream, addr)) => {
+//                 log::debug!("accept from {}", addr);
+//                 let quic_server = quic_server.clone();
+//                 tokio::spawn(async move {
+//                     if let Err(e) = handle_client(stream,quic_server,None).await{
+//                         log::warn!("handle client error:{}",e);
+//                     }
+//                 });
+//             }
+//             Err(e) => {
+//                 log::warn!("accept error:{}", e);
+//             }
+//         }
+//     }
+// }
 
 pub async fn run_https(port:u16,quic_server:QuicServer,priv_key:&str,cert_der:&str) -> Result<(), Box<dyn std::error::Error+Send+Sync>> {
     let priv_key = rustls::pki_types::PrivateKeyDer::from_pem_slice(priv_key.as_bytes())?;
@@ -46,7 +46,7 @@ pub async fn run_https(port:u16,quic_server:QuicServer,priv_key:&str,cert_der:&s
                             let server_name = tls_stream.get_ref().1.server_name().map(|s|s.to_string());
                             log::info!("server name:{:?}",server_name);
                             if let Err(e) = handle_client(tls_stream, quic_server, server_name).await {
-                                log::warn!("handle client error:{}", e);
+                                log::debug!("handle client error:{}", e);
                             }
                         }
                         Err(e) => {

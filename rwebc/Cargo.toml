@@ -18,3 +18,4 @@ tokio-rustls = {version = "0.26.2"}
 common = { path = "../common" }
 url = "*"
 once_cell = "*"
+serde_json = {version = "*"}

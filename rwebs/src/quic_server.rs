@@ -4,7 +4,7 @@ use std::{
 use rustls::pki_types::pem::PemObject;
 use common::mac::Mac;
 use quinn::{Connection, Endpoint, Incoming, ServerConfig, VarInt};
-use tokio::{io::{AsyncRead, AsyncWrite, AsyncWriteExt}, sync::RwLock, time::timeout};
+use tokio::{io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt}, sync::RwLock, time::timeout};
 
 const CER_BIN:&[u8] = include_bytes!("../../reform.cer");
 const KEY_BIN:&[u8] = include_bytes!("../../reform.key");
@@ -45,6 +45,7 @@ impl QuicServer{
             if let Ok(stream) = conn.open_bi().await{
                 drop(peers);
                 let mut quic_stream = common::io::stream_copy::Stream::new(stream);
+                quic_stream.write(mac.as_ref()).await?;//先告诉服务器自己要连接的mac地址
                 tokio::io::copy_bidirectional(&mut tcp_stream, &mut quic_stream).await?;
             }else{
                 drop(peers);
@@ -73,26 +74,42 @@ impl QuicServer{
 async fn handle_incomming(incoming:Incoming,peers:Arc<RwLock<HashMap<Mac,Connection>>>)->Result<(),Box<dyn Error+Send+Sync>>{
     let conn = incoming.await?;
     let mut uni = conn.accept_uni().await?;
-    let mut buf = [0x00;6];
-    timeout(Duration::from_secs(5), uni.read_exact(&mut buf)).await??;
-    uni.stop(VarInt::from_u32(0)).unwrap_or_default();
-    drop(uni);
-    let mut peers_s = peers.write().await;
-    if let Some(_) = peers_s.get(&buf.into()){
-        log::warn!("node_mac already online:{}",Mac::from(buf));
-        conn.close(VarInt::from_u32(401), "node_mac already online".as_bytes().into());
-        return Ok(());
+    let mac_list_len = timeout(Duration::from_secs(5), uni.read_u16()).await??;
+    let mut mac_list:Vec<Mac> =  Vec::with_capacity(mac_list_len as usize);
+    for _ in 0..mac_list_len{
+        let mut buf = [0x00;6];
+        timeout(Duration::from_secs(5), uni.read_exact(&mut buf)).await??;
+        mac_list.push(buf.into());
     }
-    let mac = Mac::from(buf);
-    peers_s.insert(mac, conn.clone());
-    drop(peers_s);
-    //println!("{} online",mac);
-    log::info!("{} online",mac);
-    let close = conn.closed().await;
-    //println!("{} closed,{}",mac,close);
+    // let mut buf = [0x00;6];
+    // timeout(Duration::from_secs(5), uni.read_exact(&mut buf)).await??;
+    // uni.stop(VarInt::from_u32(0)).unwrap_or_default();
+    // drop(uni);
+    // let mut peers_s = peers.write().await;
+    // if let Some(_) = peers_s.get(&buf.into()){
+    //     log::warn!("node_mac already online:{}",Mac::from(buf));
+    //     conn.close(VarInt::from_u32(401), "node_mac already online".as_bytes().into());
+    //     return Ok(());
+    // }
     let mut peers_s = peers.write().await;
-    log::info!("{} closed,{}",mac,close);
-    peers_s.remove(&mac);
+    for mac in mac_list.iter(){
+        if let Some(_) = peers_s.get(mac){
+            log::warn!("node_mac already online:{}",mac);
+            conn.close(VarInt::from_u32(401), "node_mac already online".as_bytes().into());
+            return Ok(());
+        }else{
+            peers_s.insert(mac.clone(), conn.clone());
+        }
+    }
+    drop(peers_s);
+    log::info!("node_mac online:{}",mac_list.iter().map(|m|m.to_string()).collect::<Vec<String>>().join(","));
+    let _close = conn.closed().await;
+    //println!("{:?} closed,{}",mac_list,close);
+    log::info!("node_mac offline:{}",mac_list.iter().map(|m|m.to_string()).collect::<Vec<String>>().join(","));
+    let mut peers_s = peers.write().await;
+    for mac in mac_list.iter(){
+        peers_s.remove(mac);
+    }
     drop(peers_s);
     Ok(())
 }

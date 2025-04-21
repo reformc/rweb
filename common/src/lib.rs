@@ -1,5 +1,6 @@
 pub mod mac;
 pub mod io;
+pub mod proxy_list;
 use std::error::Error;
 pub use io::header::{get_header,Header};
 

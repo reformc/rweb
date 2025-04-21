@@ -38,6 +38,12 @@ impl <R: AsyncRead + AsyncWrite + Unpin + Send>super::ResetHeader for PeekableSt
         buf.try_into()        
     }
 
+    async fn read_mac(&mut self)->Result<crate::mac::Mac, crate::RwebError> {
+        let mut buf = [0x00;6];
+        self.inner.read_exact(&mut buf).await.map_err(|e| RwebError::new(402,e))?;
+        Ok(buf.into())
+    }
+
     fn peek_remove(&mut self) {
         self.peek_buf.clear();
     }
