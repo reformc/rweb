@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use tokio::io::{AsyncRead, AsyncReadExt};
 
+use crate::RwebError;
+
 #[allow(unused)]
 #[derive(Debug,Clone)]
 pub struct Header{
@@ -18,10 +20,19 @@ impl Header{
     pub fn set(&mut self,key:String,value:String){
         self.header.insert(key,value);
     }
+
+    pub fn remove(&mut self,key:&str)->Option<String>{
+        self.header.remove(key)
+    }
+
+    pub fn insert(&mut self,key:String,value:String){
+        self.header.insert(key,value);
+    }
 }
 
-impl From<Vec<u8>> for Header{
-    fn from(buf:Vec<u8>)->Self{
+impl TryFrom<Vec<u8>> for Header{
+    type Error = RwebError;
+    fn try_from(buf:Vec<u8>)->Result<Self,Self::Error>{
         let mut header = HashMap::new();
         let mut lines = buf.split(|&b| b == b'\r' || b == b'\n');
         let mut method = "";
@@ -49,12 +60,15 @@ impl From<Vec<u8>> for Header{
                 }
             }
         }
-        Self{
+        if method.is_empty() || uri.is_empty() || version.is_empty() {
+            return Err(RwebError::new(400,"header error"));
+        }
+        Ok(Self{
             method:method.to_string(),
             uri:uri.to_string(),
             version:version.to_string(),
             header:header
-        }
+        })
     }
 }
 
@@ -82,7 +96,7 @@ impl Into<Vec<u8>> for Header{
     }
 }
 
-pub async fn get_header<R: AsyncRead + Unpin>(stream:&mut R)->Result<Header,Box<dyn std::error::Error+Send+Sync>>{
+pub async fn get_header<R: AsyncRead + Unpin>(stream:&mut R)->Result<Header,RwebError>{
     let mut buf = Vec::new();
     let mut header = [0u8; 1];
     loop{ 
@@ -92,10 +106,10 @@ pub async fn get_header<R: AsyncRead + Unpin>(stream:&mut R)->Result<Header,Box<
                 break
             }else{
                 if buf.len() > 256*256{
-                    return Err("header too long".into())
+                    return Err(RwebError::new(500,"header too long"))
                 }
             }
         }
     }
-    Ok(buf.into())
+    buf.try_into()
 }

@@ -4,9 +4,11 @@ members = [ "cert-key-file", "common", "proxy-change-header","rwebc", "rwebc-dem
 resolver = "2"
 
 [profile.release]
-debug = true
+debug = false
 panic = 'abort'
 strip = true
+#strip = "symbols"
 opt-level = 'z'
 lto=true
+#lto = "fat"
 codegen-units = 1

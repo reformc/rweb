@@ -8,3 +8,6 @@ libloading = { version = "*"}
 clap = { version = "*", features = ["derive"] }
 simple_logger = "*"
 log = { version = "*" }
+
+[build-dependencies]
+winres = "0.1"

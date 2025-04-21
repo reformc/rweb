@@ -3,7 +3,7 @@ use std::{
 };
 use rustls::pki_types::pem::PemObject;
 use common::mac::Mac;
-use quinn::{Connection, Endpoint, Incoming, RecvStream, SendStream, ServerConfig, VarInt};
+use quinn::{Connection, Endpoint, Incoming, ServerConfig, VarInt};
 use tokio::{io::{AsyncRead, AsyncWrite, AsyncWriteExt}, sync::RwLock, time::timeout};
 
 const CER_BIN:&[u8] = include_bytes!("../../reform.cer");
@@ -25,27 +25,27 @@ impl QuicServer{
         loop{
             match endpoint.accept().await{
                 Some(conn)=>{
-                    //println!("quic server accept some");
                     let peers = self.peers.clone();
                     tokio::spawn(async move {
-                        if let Err(e) = handle_incomming(conn,peers).await{
-                            println!("handle incomming error:{}",e);
+                        if let Err(_e) = handle_incomming(conn,peers).await{
+                            //println!("handle incomming error:{}",_e);
                         }
                     });
                 },
                 None=>{
-                    println!("endpoint accept none");
+                    //println!("endpoint accept none");
                 }
             }
         }
     }
 
-    pub async fn translate<T:AsyncRead+AsyncWrite+Unpin>(&self,mac:Mac,mut tcp_stream:T,header_bytes:Vec<u8>)->Result<(),Box<dyn Error+Send+Sync>>{
+    pub async fn translate<T:AsyncRead+AsyncWrite+Unpin>(&self,mac:Mac,mut tcp_stream:T)->Result<(),Box<dyn Error+Send+Sync>>{
         let peers = self.peers.read().await;
         if let Some(conn) = peers.get(&mac){
             if let Ok(stream) = conn.open_bi().await{
                 drop(peers);
-                translate(tcp_stream,stream,header_bytes).await?;
+                let mut quic_stream = common::io::stream_copy::Stream::new(stream);
+                tokio::io::copy_bidirectional(&mut tcp_stream, &mut quic_stream).await?;
             }else{
                 drop(peers);
                 let body = "设备未连接";
@@ -70,100 +70,6 @@ impl QuicServer{
     }
 }
 
-async fn translate<T:AsyncRead+AsyncWrite+Unpin>(tcp_stream:T,(mut bi_send,mut bi_recv):(SendStream,RecvStream),header_bytes:Vec<u8>)->Result<(),Box<dyn Error+Send+Sync>>{
-    bi_send.write_all(&header_bytes).await?;
-    let (mut tcp_recv,mut tcp_send) = tokio::io::split(tcp_stream);
-    let _res:std::io::Result<u64> = tokio::select! {
-        a = tokio::io::copy(&mut tcp_recv, &mut bi_send) => a,
-        b = tokio::io::copy(&mut bi_recv, &mut tcp_send) => b,
-    };
-    log::debug!("quic bi stream closed");
-    Ok(())
-}
-
-// async fn translate<T:AsyncRead+AsyncWrite+Unpin+Send+'static>(tcp_stream:T,(mut bi_send,mut bi_recv):(SendStream,RecvStream),header_bytes:Vec<u8>)->Result<(),Box<dyn Error+Send+Sync>>{
-//     bi_send.write_all(&header_bytes).await?;
-//     let (mut tcp_recv,mut tcp_send) = tokio::io::split(tcp_stream);
-//     let a = tokio::spawn(async move {
-//         let mut buf = [0x00; 256*256];
-//         loop {
-//             println!("quic bi send package 0 start");
-//             match tcp_recv.read(&mut buf).await {
-//                 Ok(0) => break,
-//                 Ok(len) => {
-//                     println!("quic bi send package 1 read ok");
-//                     if let Err(e) = bi_send.write_all(&buf[0..len]).await {
-//                         log::warn!("quic send error:{}", e);
-//                         break;
-//                     }else{
-//                         println!("quic bi send package 2 write ok");
-//                     }
-//                     if let Err(e) = bi_send.flush().await {
-//                         log::warn!("quic send flush error:{}", e);
-//                         break;
-//                     }else{
-//                         println!("quic bi send package 3 flush ok");
-//                     }
-//                 }
-//                 Err(e) => {
-//                     log::warn!("tcp recv error:{}", e);
-//                     break;
-//                 }
-//             }
-//             println!("quic bi send package 4 end");
-//         }
-//     });
-//     let b = tokio::spawn(async move{
-//         let mut buf = [0x00; 256*256];
-//         loop{
-//             println!("quic bi recv package _0 start");
-//             match bi_recv.read(&mut buf).await{
-//                 Ok(Some(0)) => {break},
-//                 Ok(Some(len)) => {
-//                     println!("quic bi recv package _1 read ok");
-//                     match tcp_send.write_all(&buf[0..len]).await{
-//                         Ok(_) => {
-//                             println!("quic bi recv package _2 write ok");
-//                             match timeout(Duration::from_secs(3),tcp_send.flush()).await{
-//                                 Ok(Ok(_)) => {
-//                                     println!("quic bi recv package _3 flush ok");
-//                                 },
-//                                 Ok(Err(e)) => {
-//                                     log::warn!("tcp send flush error:{}",e);
-//                                     break;
-//                                 }
-//                                 Err(e) => {
-//                                     log::warn!("tcp send flush error:{}",e);
-//                                     break;
-//                                 }
-//                             };
-//                         },
-//                         Err(e) => {
-//                             log::warn!("tcp send error:{}",e);
-//                             break;
-//                         }
-//                     }
-//                 }
-//                 Ok(None) => {
-//                     log::warn!("quic recv stream closed");
-//                     break;
-//                 }
-//                 Err(e) => {
-//                     log::warn!("quic recv error:{}",e);
-//                     break;
-//                 }
-//             };
-//             println!("quic bi recv package _4 end");
-//         }
-//     });
-//     tokio::select! {
-//         _a = a => _a.unwrap_or_default(),
-//         _b = b => _b.unwrap_or_default(),
-//     };
-//     log::debug!("quic bi stream closed");
-//     Ok(())
-// }
-
 async fn handle_incomming(incoming:Incoming,peers:Arc<RwLock<HashMap<Mac,Connection>>>)->Result<(),Box<dyn Error+Send+Sync>>{
     let conn = incoming.await?;
     let mut uni = conn.accept_uni().await?;
@@ -180,23 +86,16 @@ async fn handle_incomming(incoming:Incoming,peers:Arc<RwLock<HashMap<Mac,Connect
     let mac = Mac::from(buf);
     peers_s.insert(mac, conn.clone());
     drop(peers_s);
-    println!("{} online",mac);
-    //let res = uni_stream(&mut uni).await;
-    //conn.close(VarInt::from_u32(0), "node_mac offline".as_bytes().into());
-    let close = conn.closed().await;//这个closed好像有时候不起作用，导致cpu占用暴涨。
-    println!("{} closed,{}",mac,close);
+    //println!("{} online",mac);
+    log::info!("{} online",mac);
+    let close = conn.closed().await;
+    //println!("{} closed,{}",mac,close);
     let mut peers_s = peers.write().await;
+    log::info!("{} closed,{}",mac,close);
     peers_s.remove(&mac);
     drop(peers_s);
     Ok(())
 }
-
-// async fn uni_stream(stream:&mut quinn::RecvStream)->Result<(),Box<dyn Error+Send+Sync>>{
-//     let mut buf = [0x00; 6];
-//     loop{
-//         timeout(Duration::from_millis(KEEPALIVE_INTERVAL_MILLIS *3 as u64),stream.read_exact(&mut buf)).await??;
-//     }
-// }
 
 pub fn make_server_udp_endpoint(addr:SocketAddr, cert_der:&[u8], priv_key:&[u8]) -> Result<Endpoint, Box<dyn Error>> {
     Ok(Endpoint::server( configure_host_server(cert_der,priv_key)?, addr)?)

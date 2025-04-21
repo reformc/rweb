@@ -4,17 +4,8 @@ use common::mac::Mac;
 use url::Url;
 use super::quic_client::run;
 
-#[repr(C)]
-pub enum QuicError {
-    Success = 0,
-    ConnectionFailed = -1,
-    StreamError = -2,
-    InvalidArgs = -3,
-    RuntimeError = -4,
-}
-
 #[unsafe(no_mangle)]
-pub extern "C" fn quic_client_run(
+pub extern "C" fn quic_node_run(
     server_host: *const c_char,
     server_port: c_int,
     proxy_addr: *const c_char,
@@ -23,41 +14,53 @@ pub extern "C" fn quic_client_run(
     // 转换C字符串到Rust字符串
     if let Ok(server_host) = unsafe { CStr::from_ptr(server_host).to_str() } {
         if server_host.is_empty() {
-            return -3;
+            return -30;
         }
         if let Ok(proxy_addr) = unsafe { CStr::from_ptr(proxy_addr).to_str() } {
             if proxy_addr.is_empty() {
-                return -3;
+                return -31;
             }
             match proxy_addr.parse::<Url>(){
                 Ok(url) => {
                     if let Ok(mac_addr) = unsafe { CStr::from_ptr(mac_addr).to_str() } {
                         if let Ok(mac) = mac_addr.parse::<Mac>() {
-                            let rt = match tokio::runtime::Runtime::new() {
+                            //多线程会消耗更多的资源,如果并发不高的话可以使用单线程
+                            // let rt = match tokio::runtime::Runtime::new() {
+                            //     Ok(rt) => rt,
+                            //     Err(_) => return -37,
+                            // };
+                            //单线程消耗资源更少,如果并发较高的话可以使用多线程
+                            let rt = match tokio::runtime::Builder::new_current_thread()
+                            .enable_io()
+                            .enable_time()
+                            .build() {
                                 Ok(rt) => rt,
-                                Err(_) => return -4,
+                                Err(_) => return -37,
                             };
                             let url = std::sync::Arc::new(url);
                             loop{
                                 match rt.block_on(run(server_host,server_port as u16,url.clone(),mac)) {
                                     Ok(_) => {},
-                                    Err(e) => {eprintln!("{:?}",e)},
+                                    Err(_e) => {
+                                        #[cfg(feature="log")]
+                                        eprintln!("{:?}",_e)
+                                    },
                                 }
                                 std::thread::sleep(std::time::Duration::from_secs(30));//max_idle_timeout为21秒,这里如果是因为mac地址重复而无法连接的话，立即重连会被踢掉。
                             }
                         } else {
-                            -3
+                            -32
                         }
                     } else {
-                        -3
+                        -33
                     }
                 },
-                Err(_) => return -3,
+                Err(_) => -34,
             }
         } else {
-            -3
+            -35
         }
     } else {
-        -3
+        -36
     }
 }
