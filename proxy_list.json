@@ -1,0 +1,6 @@
+[
+    {"mac":"aabbcc00020c","url":"http://192.168.2.12"},
+    {"mac":"aabbcc01020c","url":"rstp://192.168.2.12"},
+    {"mac":"aabbcc00020b","url":"http://192.168.2.11"},
+    {"mac":"aabbcc01020b","url":"rstp://192.168.2.11"}
+]

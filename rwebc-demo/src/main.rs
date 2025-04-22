@@ -16,11 +16,14 @@ struct Opts {
     #[clap(long, default_value = "5677")]
     server_port: u16,
     ///代理清单,为json数组，例如为[{"mac":"aabbccddeeff","url":"http://192.168.0.1"}],mac必须是合法的mac地址，url必须是合法的url地址，不然会报错-32
-    #[clap(short, long, default_value = "https://192.168.3.240/")]
-    proxy_list: String,
+    #[clap(short, long)]
+    proxy_list: Option<String>,
     ///so或dell文件地址,这个参数不是传给so或dll函数的
-    #[clap(short, long, default_value = "https://192.168.3.240/")]
-    lib_path: Option<String>
+    #[clap(short, long)]
+    lib_path: Option<String>,
+    ///so或dell文件地址,这个参数不是传给so或dll函数的
+    #[clap(short, long)]
+    proxy_list_file: Option<String>
 }
 
 fn main(){
@@ -35,7 +38,8 @@ fn main(){
     let _ret = unsafe{
         //c语言的字符串要加\0结尾
         let server_host = opts.server_host+"\0";
-        let proxy_list = opts.proxy_list+"\0";
+        let proxy_list = opts.proxy_list.unwrap_or(std::fs::read_to_string(opts.proxy_list_file.unwrap()).unwrap())+"\0";
+        println!("server_host: {}, server_port: {}, proxy_list_file: {}", server_host, opts.server_port, proxy_list);
         let lib = libloading::Library::new(lib_path).unwrap();
         let func: libloading::Symbol<unsafe extern "C" fn(*const c_char, c_int, *const c_char) -> i32> = lib.get(b"quic_node_run").unwrap();
         func(

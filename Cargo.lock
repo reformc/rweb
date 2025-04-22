@@ -1062,6 +1062,7 @@ dependencies = [
  "clap",
  "libloading",
  "log",
+ "serde",
  "simple_logger",
  "winres",
 ]
