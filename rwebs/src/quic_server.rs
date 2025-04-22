@@ -2,7 +2,7 @@ use std::{
     collections::HashMap, error::Error, net::{IpAddr, Ipv4Addr, SocketAddr}, sync::Arc, time::Duration
 };
 use rustls::pki_types::pem::PemObject;
-use common::mac::Mac;
+use common::{mac::Mac, RwebError};
 use quinn::{Connection, Endpoint, Incoming, ServerConfig, VarInt};
 use tokio::{io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt}, sync::RwLock, time::timeout};
 
@@ -47,6 +47,7 @@ impl QuicServer{
                 let mut quic_stream = common::io::stream_copy::Stream::new(stream);
                 quic_stream.write(mac.as_ref()).await?;//先告诉服务器自己要连接的mac地址
                 tokio::io::copy_bidirectional(&mut tcp_stream, &mut quic_stream).await?;
+                Ok(())
             }else{
                 drop(peers);
                 let body = "设备未连接";
@@ -56,6 +57,7 @@ impl QuicServer{
                     body
                 );
                 tcp_stream.write_all(response.as_bytes()).await?;
+                Err(RwebError::new(502,"设备连接无法使用".to_string()).into())
             }
         }else{
             drop(peers);
@@ -66,8 +68,8 @@ impl QuicServer{
                 body
             );
             tcp_stream.write_all(response.as_bytes()).await?;
+            Err(RwebError::new(402,"设备未连接".to_string()).into())
         }
-        Ok(())
     }
 }
 
@@ -81,16 +83,6 @@ async fn handle_incomming(incoming:Incoming,peers:Arc<RwLock<HashMap<Mac,Connect
         timeout(Duration::from_secs(5), uni.read_exact(&mut buf)).await??;
         mac_list.push(buf.into());
     }
-    // let mut buf = [0x00;6];
-    // timeout(Duration::from_secs(5), uni.read_exact(&mut buf)).await??;
-    // uni.stop(VarInt::from_u32(0)).unwrap_or_default();
-    // drop(uni);
-    // let mut peers_s = peers.write().await;
-    // if let Some(_) = peers_s.get(&buf.into()){
-    //     log::warn!("node_mac already online:{}",Mac::from(buf));
-    //     conn.close(VarInt::from_u32(401), "node_mac already online".as_bytes().into());
-    //     return Ok(());
-    // }
     let mut peers_s = peers.write().await;
     for mac in mac_list.iter(){
         if let Some(_) = peers_s.get(mac){
@@ -104,7 +96,6 @@ async fn handle_incomming(incoming:Incoming,peers:Arc<RwLock<HashMap<Mac,Connect
     drop(peers_s);
     log::info!("node_mac online:{}",mac_list.iter().map(|m|m.to_string()).collect::<Vec<String>>().join(","));
     let _close = conn.closed().await;
-    //println!("{:?} closed,{}",mac_list,close);
     log::info!("node_mac offline:{}",mac_list.iter().map(|m|m.to_string()).collect::<Vec<String>>().join(","));
     let mut peers_s = peers.write().await;
     for mac in mac_list.iter(){

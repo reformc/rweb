@@ -19,7 +19,7 @@ proxy-change-header:如果需要使用设备的http_proxy功能，需要运行�
 
 原理：
 设备运行rwebc后，会发送自己的mac(或自定义标签)到中心服务器注册，例如设备标签为aabbccddeeff。
-在tcp层做代理，所以websocket、sse等协议都支持，暂不支持设备管理页面为https的连接。
+在tcp层做代理，
 
 示例：
 1 cargo run --bin cert-key-file
