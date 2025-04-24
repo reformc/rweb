@@ -6,7 +6,7 @@ use url::Url;
 use tokio_rustls::TlsConnector;
 use rustls::{client::danger::{ServerCertVerified,ServerCertVerifier},pki_types::ServerName};
 use common::{io::{stream_copy::Stream, ResetHeader}, proxy_list::ProxyList};
-use common::{Header,RwebError};
+use common::{RwebError,mac::Mac};
 
 const IDLE_TIMEOUT_MILLIS:u32=21_000;
 const CER_BIN:&[u8] = include_bytes!("../../reform.cer");
@@ -20,6 +20,11 @@ static CONNECTOR:once_cell::sync::Lazy<TlsConnector> = once_cell::sync::Lazy::ne
     config.dangerous().set_certificate_verifier(Arc::new(NoVerify));
     TlsConnector::from(Arc::new(config))
 });
+
+pub trait DiyStrem: Send + Sync + Unpin+ Clone + 'static {
+    fn new_diy_stream(&self, mac: Mac, proxy_addr:Option<SocketAddr>)->impl Future<Output = Result<impl AsyncReadWrite + Send, RwebError>> + Send;
+    fn mac_list(&self)->Vec<&Mac>;
+}
 
 fn make_client_endpoint(addr:SocketAddr) -> Result<Endpoint, Box<dyn Error+Send+Sync>> {
     let mut endpoint = Endpoint::client(addr)?;
@@ -41,32 +46,38 @@ fn configure_host_client(cert_der:&[u8]) -> ClientConfig {
     client_config
 }
 
-pub async fn run(server_host:&str,server_port:u16,proxy_list:Vec<ProxyList>)->Result<(),RwebError>{
+pub async fn run_diy_stream(server_host:&str,server_port:u16,diy_stream:impl DiyStrem)->Result<(),RwebError>{
     let server_addr = (server_host, server_port).to_socket_addrs().map_err(|e|RwebError{code:-10,msg:e.to_string()})?.next().ok_or("can't resolve").map_err(|e|RwebError{code:-11,msg:e.to_string()})?;
     let bind_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0);
     let client = make_client_endpoint(bind_addr).map_err(|e|RwebError{code:-12,msg:e.to_string()})?;
     let conn = client.connect(server_addr, "reform").map_err(|e|RwebError{code:-13,msg:e.to_string()})?;
     let connection = conn.await.map_err(|e|RwebError{code:-14,msg:e.to_string()})?;
     let mut uni_stream = connection.open_uni().await.map_err(|e|RwebError{code:-15,msg:e.to_string()})?;
-    uni_stream.write_u16(proxy_list.len() as u16).await.map_err(|e|RwebError{code:-17,msg:e.to_string()})?;
-    for proxy in proxy_list.iter(){
-        uni_stream.write_all(proxy.mac.as_ref()).await.map_err(|e|RwebError{code:-18,msg:e.to_string()})?;
+    let mac_list = diy_stream.mac_list();
+    uni_stream.write_u16(mac_list.len() as u16).await.map_err(|e|RwebError{code:-17,msg:e.to_string()})?;
+    for v in mac_list.iter(){
+        uni_stream.write_all(v.as_ref()).await.map_err(|e|RwebError{code:-18,msg:e.to_string()})?;
     }
     uni_stream.finish().unwrap_or_default();
     drop(uni_stream);
-    listen_bi(connection, proxy_list, server_addr).await
+    listen_bi(connection, diy_stream).await
 }
 
-async fn listen_bi(connection:Connection,proxy_list:Vec<ProxyList>,server_addr:SocketAddr)->Result<(),RwebError>{
-    let proxy_list = Arc::new(proxy_list);
+pub async fn run(server_host:&str,server_port:u16,proxy_list:Vec<ProxyList>)->Result<(),RwebError>{
+    let server_addr = (server_host, server_port).to_socket_addrs().map_err(|e|RwebError{code:-10,msg:e.to_string()})?.next().ok_or("can't resolve").map_err(|e|RwebError{code:-11,msg:e.to_string()})?;
+    let diy_stream = ProxyStringList::new(Arc::new(proxy_list),server_addr);
+    run_diy_stream(server_host,server_port,diy_stream).await
+}
+
+async fn listen_bi(connection:Connection,diy_stream:impl DiyStrem)->Result<(),RwebError>{
     loop{
         match connection.accept_bi().await{
             Ok(bi_stream) => {
-                let proxy_list = proxy_list.clone();
+                let diy_stream = diy_stream.clone();
                 tokio::spawn(async move {
                     #[cfg(feature="log")]
                     println!("accept bi stream from {}",server_addr);
-                    handle_bi(bi_stream,proxy_list,server_addr).await.unwrap_or_else(|_e| {
+                    handle_bi(bi_stream,diy_stream).await.unwrap_or_else(|_e| {
                         #[cfg(feature="log")]
                         println!("handle_bi error:{}", _e);
                     });
@@ -79,14 +90,18 @@ async fn listen_bi(connection:Connection,proxy_list:Vec<ProxyList>,server_addr:S
     }
 }
 
-async fn handle_bi<S: AsyncWrite + Unpin + Send, R: AsyncRead + Unpin + Send>(bi_stream:(S,R),proxy_list:Arc<Vec<ProxyList>>,server_addr:SocketAddr)->Result<(),Box<dyn Error+Send+Sync>>{
+async fn handle_bi<S: AsyncWrite + Unpin + Send, R: AsyncRead + Unpin + Send>(bi_stream:(S,R),diy_stream:impl DiyStrem)->Result<(),Box<dyn Error+Send+Sync>>{
     let mut quic_stream = Stream::new(bi_stream);
     if let Ok(mac) = quic_stream.read_mac().await{
         if let Ok(mut header) = quic_stream.peek_header().await{
             match header.method.as_str(){
                 "CONNECT"=>{
                     quic_stream.peek_remove();//这个header不要了
-                    proxy_translate(quic_stream,&header.uri,server_addr).await?;
+                    let url_addr = header.uri.to_socket_addrs()?.next().ok_or("can't resolve")?;
+                    let mut stream = diy_stream.new_diy_stream(mac,Some(url_addr)).await?;
+                    quic_stream.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n").await?;
+                    quic_stream.flush().await?;
+                    tokio::io::copy_bidirectional(&mut quic_stream, &mut stream).await?;
                 },
                 _=>{
                     if let Some(_keep_alive) = header.get("Proxy-Connection"){//旧版http_proxy代理协议和新版区别很大.
@@ -105,10 +120,12 @@ async fn handle_bi<S: AsyncWrite + Unpin + Send, R: AsyncRead + Unpin + Send>(bi
                             header.uri = "/".to_string();
                         }
                         quic_stream.reset_header(header);
-                        proxy_translate_http(quic_stream,&proxy_addr,server_addr).await?
+                        let proxy_addr = proxy_addr.to_socket_addrs()?.next().ok_or("can't resolve")?;
+                        let mut stream = diy_stream.new_diy_stream(mac,Some(proxy_addr)).await?;
+                        tokio::io::copy_bidirectional(&mut quic_stream, &mut stream).await?;
                     }else{
-                        let proxy_addr = proxy_list.iter().find(|x|x.mac==mac).ok_or("not found proxy addr")?;
-                        tcp_translate(quic_stream,&proxy_addr.url,header,server_addr).await?//后面再改header
+                        let mut stream = diy_stream.new_diy_stream(mac,None).await?;
+                        tokio::io::copy_bidirectional(&mut quic_stream, &mut stream).await?;
                     }
                 }
             }
@@ -120,80 +137,6 @@ async fn handle_bi<S: AsyncWrite + Unpin + Send, R: AsyncRead + Unpin + Send>(bi
                Error: Bad Request").await?;
         return Ok(());
     }
-    Ok(())
-}
-
-async fn tcp_translate<S: AsyncWrite + AsyncRead + ResetHeader + Unpin>(mut quic_stream:S,proxy_addr:&Url,mut header:Header,server_addr:SocketAddr)->Result<(),Box<dyn Error+Send+Sync>>{
-    let host = proxy_addr.host_str().ok_or("proxy_addr have no host")?.to_string();
-    #[cfg(feature="log")]
-    println!("schme:{}",proxy_addr.scheme());
-    let addr = if host.contains(":"){
-        host.clone()
-    }else{
-        host.clone() + match proxy_addr.scheme(){"http"=>":80","rtsp"=>":554","https"=>":443",_=>"error"}
-    };
-
-    let addr = addr.to_socket_addrs()?.next().ok_or("can't resolve")?;
-    if addr == server_addr{
-        #[cfg(feature="log")]
-        println!("proxy addr:tcp:{},server_addr:{}",addr,server_addr);
-        quic_stream.write_all(b"HTTP/1.1 508 Loop Detected\r\n\
-               Content-Type: text/plain\r\n\
-               Content-Length: 23\r\n\r\n\
-               Error: Request loop detected").await?;
-        return Err(RwebError{code:-21,msg:"loop detected".to_string()}.into());
-    }
-    let mut tcp_stream = TcpStream::connect(addr).await?;
-
-    match proxy_addr.scheme(){
-        "http"|"rtsp" => {
-            tokio::io::copy_bidirectional(&mut quic_stream, &mut tcp_stream).await?;
-            Ok(())
-        },
-        "https" => {
-            header.set("Host".to_string(), host.clone());//将host设置为代理地址的头，注释掉的话，会变成带mac的服务器地址
-            let mut tls_stream = CONNECTOR.connect(ServerName::try_from(host.split(":").next().ok_or("proxy_addr have not host")?.to_string())?, tcp_stream).await?;
-            quic_stream.reset_header(header);
-            tokio::io::copy_bidirectional(&mut tls_stream, &mut quic_stream).await?;
-            Ok(())
-        },
-        _ => Err("not support scheme".into())
-    }
-}
-
-async fn proxy_translate_http<S: AsyncWrite + AsyncRead + Unpin>(mut quic_stream:S,proxy_addr:&str,server_addr:SocketAddr)->Result<(),Box<dyn Error+Send+Sync>>{
-    let proxy_addr = proxy_addr.to_socket_addrs()?.next().ok_or("can't resolve")?;
-    #[cfg(feature="log")]
-    println!("proxy addr:tcp:{},server_addr:{}",proxy_addr,server_addr);
-    if proxy_addr == server_addr{
-        quic_stream.write_all(b"HTTP/1.1 508 Loop Detected\r\n\
-               Content-Type: text/plain\r\n\
-               Content-Length: 23\r\n\r\n\
-               Error: Request loop detected").await?;
-        return Ok(());
-    }
-    let mut tcp_stream = TcpStream::connect(proxy_addr).await?;
-    tokio::io::copy_bidirectional(&mut quic_stream, &mut tcp_stream).await?;
-    Ok(())
-}
-
-async fn proxy_translate<S: AsyncWrite + AsyncRead + ResetHeader + Unpin>(mut quic_stream:S,proxy_addr:&str,server_addr:SocketAddr)->Result<(),Box<dyn Error+Send+Sync>>{
-    let proxy_addr = proxy_addr.to_socket_addrs()?.next().ok_or("can't resolve")?;
-    #[cfg(feature="log")]
-    println!("proxy addr:tcp:{},server_addr:{}",proxy_addr,server_addr);
-    if proxy_addr == server_addr{
-        #[cfg(feature="log")]
-        eprintln!("proxy addr:tcp:{},server_addr:{},loop detected",proxy_addr,server_addr);
-        quic_stream.write_all(b"HTTP/1.1 508 Loop Detected\r\n\
-               Content-Type: text/plain\r\n\
-               Content-Length: 23\r\n\r\n\
-               Error: Request loop detected").await?;
-        return Ok(());
-    }
-    let mut tcp_stream = TcpStream::connect(proxy_addr).await?;
-    quic_stream.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n").await?;
-    quic_stream.flush().await?;
-    tokio::io::copy_bidirectional(&mut tcp_stream, &mut quic_stream).await?;
     Ok(())
 }
 
@@ -233,5 +176,73 @@ impl ServerCertVerifier for NoVerify {
     
     fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
         vec![0x0201,0x0203,0x0401,0x0403,0x0501,0x0503,0x0601,0x0603,0x0804,0x0805,0x0806,0x0807,0x0808].into_iter().map(|s| s.into()).collect()
+    }
+}
+
+
+pub trait AsyncReadWrite: AsyncRead + AsyncWrite + Unpin + Send {}
+
+impl<T: AsyncRead + AsyncWrite + Unpin + Send> AsyncReadWrite for T {}
+#[derive(Debug,Clone)]
+pub struct ProxyStringList{
+    pub proxy_list:Arc<Vec<ProxyList>>,
+    server_addr:SocketAddr,
+}
+
+impl ProxyStringList{
+    pub fn new(proxy_list:Arc<Vec<ProxyList>>,server_addr:SocketAddr)->Self{
+        Self{proxy_list,server_addr}
+    }
+}
+
+impl DiyStrem for ProxyStringList{
+    #[allow(refining_impl_trait)]
+    async fn new_diy_stream(&self,mac: Mac,proxy_addr:Option<SocketAddr>)->Result<Box<dyn AsyncReadWrite>, RwebError> {
+        #[cfg(feature="log")]
+        println!("proxy addr:tcp:{},server_addr:{}",proxy_addr,server_addr);
+        match proxy_addr{
+            Some(proxy_addr) => {
+                if proxy_addr == self.server_addr{
+                    #[cfg(feature="log")]
+                    eprintln!("proxy addr:tcp:{},server_addr:{},loop detected",proxy_addr,server_addr);
+                    return Err(RwebError::new(5023,"loop detected"));
+                }
+                let tcp_stream = TcpStream::connect(proxy_addr).await.map_err(|e|RwebError::new(5025,e.to_string()))?;
+                Ok(Box::new(tcp_stream))
+            },
+            None => {
+                let forward_url = &self.proxy_list.iter().find(|x|x.mac==mac).ok_or(RwebError::new(5024, "not found proxy addr"))?.url;
+                let host = forward_url.host_str().ok_or(RwebError::new(5026, "proxy_addr have no host"))?.to_string();
+                let forward_addr = if host.contains(":"){
+                    host.clone()
+                }else{
+                    host.clone() + match forward_url.scheme(){"http"=>":80","rtsp"=>":554","https"=>":443",_=>"error"}
+                };
+                let forward_addr = forward_addr.to_socket_addrs().map_err(|e|RwebError::new(5027, e))?.next().ok_or(RwebError::new(5028, "can't resolve"))?;
+                if forward_addr == self.server_addr{
+                    return Err(RwebError{code:5026,msg:"loop detected".to_string()}.into());
+                }
+                let tcp_stream = TcpStream::connect(forward_addr).await.map_err(|e|RwebError::new(5029,e.to_string()))?;
+
+                match forward_url.scheme(){
+                    "http"|"rtsp" => {
+                        Ok(Box::new(tcp_stream))
+                    },
+                    "https" => {
+                        let tls_stream = CONNECTOR.connect(ServerName::try_from(host.split(":").next().ok_or(RwebError::new(5029,"proxy_addr have not host"))?.to_string())
+                        .map_err(|e|RwebError::new(5030,e))?, tcp_stream).await.map_err(|e|RwebError::new(5031,e.to_string()))?;
+                        //header.set("Host".to_string(), host.clone());//将host设置为代理地址的头，注释掉的话，会变成带mac的服务器地址
+                        //quic_stream.reset_header(header);
+                        Ok(Box::new(tls_stream))
+                    },
+                    _ => Err(RwebError{code:5026,msg:"loop detected".to_string()}.into())
+                }
+                
+            }
+        }
+    }
+
+    fn mac_list(&self)->Vec<&Mac>{
+        self.proxy_list.iter().map(|x|&x.mac).collect()
     }
 }
