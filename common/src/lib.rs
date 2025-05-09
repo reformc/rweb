@@ -1,6 +1,8 @@
 pub mod mac;
 pub mod io;
 pub mod proxy_list;
+#[cfg(feature="p2p")]
+pub mod p2p_list;
 use std::error::Error;
 pub use io::header::{get_header,Header};
 

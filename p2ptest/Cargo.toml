@@ -1,0 +1,10 @@
+[package]
+name = "p2ptest"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio = {version = "*",features = ["rt","rt-multi-thread","macros"] }
+rustls = "*"
+quinn = {version = "0.11.7",default-features = false,features = ["rustls-ring","runtime-tokio"]}
+common = { path = "../common" }

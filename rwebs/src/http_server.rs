@@ -42,7 +42,7 @@ pub async fn run_https(port:u16,quic_server:QuicServer,priv_key:&str,cert_der:&s
 pub async fn handle_stream(stream: TcpStream, quic_server: QuicServer,tls_config:Arc<ServerConfig>) -> Result<(), Box<dyn std::error::Error+Send+Sync>> {
     let mut first_byte = [0x00;1];
     stream.peek(&mut first_byte).await?;
-    match first_byte[0] {
+    match first_byte[0] {//https连接
         0x16 => {
             let acceptor = TlsAcceptor::from(tls_config);
             match acceptor.accept(stream).await {
@@ -70,7 +70,7 @@ pub async fn handle_stream(stream: TcpStream, quic_server: QuicServer,tls_config
 async fn handle_client<T: AsyncRead + AsyncWrite + Unpin>(stream: T, quic_server: QuicServer,http_proxy_host: Option<String>,schme:Scheme) -> Result<(), Box<dyn std::error::Error+Send+Sync>> {
     let mut stream = PeekableStream::new(stream);
     let header = stream.peek_header().await?;
-    log::info!("header: {:?}", header.uri);
+    log::info!("header: {:?}", header);
     if header.method.as_str() == "OPTIONS" && header.version.as_str() == "RTSP/1.0" {//代理rtsp协议，仅支持tcp和端口复用的rtsp，也就是支持NAT的rtsp
         let url = url::Url::parse(&header.uri).map_err(|e| format!("url parse error:{}", e))?;
         let host = url.host_str().ok_or("host error")?.to_string();
@@ -85,9 +85,9 @@ async fn handle_client<T: AsyncRead + AsyncWrite + Unpin>(stream: T, quic_server
         stream.write_all("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n".as_bytes()).await?;
         return Err("rweb http_proxy not support http, you can use https".into());
     }
-    log::info!("method: {},version:{}", header.method,header.version);
     let host_header = http_proxy_host.unwrap_or(header.get("Host").ok_or("not found Host header")?.to_string());
     let mac:Mac = host_header.split('.').next().ok_or("host error")?.try_into()?;
+    log::info!("method: {}, version: {}, mac: {}", header.method, header.version, mac);
     quic_server.translate(mac,stream).await?;
     Ok(())
 }
@@ -95,7 +95,7 @@ async fn handle_client<T: AsyncRead + AsyncWrite + Unpin>(stream: T, quic_server
 pub fn extract_full_pem_certificates(pem_content: &str) -> Vec<String> {
     let mut certificates = Vec::new();
     let mut current_cert = String::new();
-    let mut in_certificate = false;    
+    let mut in_certificate = false;
     for line in pem_content.lines() {
         if line.starts_with("-----BEGIN CERTIFICATE-----") {
             in_certificate = true;
@@ -103,7 +103,7 @@ pub fn extract_full_pem_certificates(pem_content: &str) -> Vec<String> {
             current_cert.push_str(line);
             current_cert.push('\n');
             continue;
-        }        
+        }
         if line.starts_with("-----END CERTIFICATE-----") {
             if in_certificate {
                 current_cert.push_str(line);
@@ -111,11 +111,11 @@ pub fn extract_full_pem_certificates(pem_content: &str) -> Vec<String> {
             }
             in_certificate = false;
             continue;
-        }        
+        }
         if in_certificate {
             current_cert.push_str(line);
             current_cert.push('\n');
         }
-    }    
+    }
     certificates
 }

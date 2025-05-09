@@ -3,6 +3,10 @@ name = "rwebs"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+p2p = ["common/p2p"]
+
 [dependencies]
 tokio = {version = "*",features = ["rt","macros","rt-multi-thread","sync","io-util","net"] }
 tokio-rustls = {version = "0.26.2"}

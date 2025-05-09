@@ -1,16 +1,21 @@
-use std::{pin::Pin, task::{Context, Poll}};
+use std::{net::SocketAddr, pin::Pin, task::{Context, Poll}};
 use tokio::io::{ReadBuf, AsyncRead, AsyncWrite, AsyncReadExt};
 use crate::{Header, RwebError};
 
 pub struct Stream<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>{
     send: R,
     recv: W,
+    remote_addr: SocketAddr,
     peek_buf: Vec<u8>,
 }
 
 impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Stream<R,W>{
-    pub fn new((recv,send):(W,R))->Self{
-        Self{send,recv,peek_buf:Vec::new()}
+    pub fn new((recv,send):(W,R),remote_addr:SocketAddr)->Self{
+        Self{send,recv,remote_addr,peek_buf:Vec::new()}
+    }
+
+    pub fn remote_address(&self)->SocketAddr{
+        self.remote_addr
     }
 }
 
