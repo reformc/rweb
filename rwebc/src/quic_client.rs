@@ -7,10 +7,9 @@ use tokio::time::{sleep, Duration};
 use url::Url;
 use tokio_rustls::TlsConnector;
 use rustls::{client::danger::{ServerCertVerified,ServerCertVerifier},pki_types::ServerName};
-use common::{io::{stream_copy::Stream, ResetHeader}, proxy_list::ProxyList};
+use rweb_common::{io::{stream_copy::Stream, ResetHeader}, proxy_list::ProxyList, RwebError, mac::Mac};
 #[cfg(feature="p2p")]
-use common::{io::header::METHOD_P2P,p2p_list::P2pCell,Header};
-use common::{RwebError,mac::Mac};
+use rweb_common::{io::header::METHOD_P2P,p2p_list::P2pCell,Header};
 #[cfg(feature="p2p")]
 use super::{p2p_client::{DiyTcpListener, P2PListener, P2pListen,p2p_connect}, symmetric};
 #[cfg(all(feature="p2ptest",feature="p2p"))]

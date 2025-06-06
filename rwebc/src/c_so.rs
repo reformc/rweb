@@ -1,6 +1,6 @@
 use std::ffi::CStr;
 use std::os::raw::{c_int,c_char};
-use common::proxy_list::ProxyList;
+use rweb_common::proxy_list::ProxyList;
 use super::quic_client::node_run;
 #[cfg(feature="p2p")]
 use common::p2p_list::P2pCell;

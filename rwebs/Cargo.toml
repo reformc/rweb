@@ -5,7 +5,7 @@ edition = "2024"
 
 [features]
 default = []
-p2p = ["common/p2p"]
+p2p = ["rweb-common/p2p"]
 
 [dependencies]
 tokio = {version = "*",features = ["rt","macros","rt-multi-thread","sync","io-util","net"] }
@@ -15,7 +15,7 @@ log = "*"
 clap = {version = "*", features = ["derive"] }
 quinn = {version = "0.11.7",default-features = false,features = ["rustls-ring","runtime-tokio"]}
 rustls = "*"
-common = { path = "../common" }
+rweb-common = { path = "../rweb-common" }
 url = "*"
 
 # console-subscriber = "0.4.1"

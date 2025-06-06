@@ -5,7 +5,7 @@ use std::{
 };
 use rustls::pki_types::pem::PemObject;
 use quinn::{ClientConfig, Endpoint, Incoming, ServerConfig, TransportConfig, VarInt};
-use common::io::header::write_addr;
+use rweb_common::io::header::write_addr;
 
 const CER_BIN:&[u8] = include_bytes!("../../reform.cer");
 const KEY_BIN:&[u8] = include_bytes!("../../reform.key");
@@ -76,7 +76,7 @@ async fn handle_incomming(inc:Incoming)->Result<(),Box<dyn Error+Send+Sync>>{
 #[cfg(test)]
 mod tests{
     use std::{error::Error, net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs}, sync::Arc};
-    use common::io::header::read_addr;
+    use rweb_common::io::header::read_addr;
     use quinn::{ClientConfig, Endpoint, ServerConfig, TransportConfig, VarInt};
     use rustls::pki_types::pem::PemObject;
 
@@ -115,33 +115,6 @@ mod tests{
         client_config.transport_config(std::sync::Arc::new(transport_config));
         client_config
     }
-    
-    // async fn li(endpoint:Endpoint){
-    //     loop{
-    //         let inc = endpoint.accept().await;
-    //         match inc{
-    //             Some(conn)=>{
-    //                 println!("accept from {}", conn.remote_address());
-    //                 let conn = conn.await.unwrap();
-    //                 loop{
-    //                     match conn.accept_bi().await{
-    //                         Ok((mut send_stream, mut recv_stream))=>{
-    //                             println!("accept bi stream from {}", conn.remote_address());
-    //                             let mut buf = [0u8; 1024];
-    //                             let n = recv_stream.read(&mut buf).await.unwrap().unwrap();
-    //                             send_stream.write_all(&buf[0..n]).await.unwrap();
-    //                         },
-    //                         Err(_e)=>{
-    //                             break
-    //                         }
-    //                     }
-    //                 }
-    //             },
-    //             None=>{
-    //             }
-    //         }
-    //     }
-    // }
 
     fn make_server_udp_endpoint(addr:SocketAddr, cert_der:&[u8], priv_key:&[u8]) -> Result<Endpoint, Box<dyn Error>> {
         Ok(Endpoint::server( configure_host_server(cert_der,priv_key)?, addr)?)

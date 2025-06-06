@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 tokio = {version = "*",features = ["rt","macros","rt-multi-thread","io-util","net"]}
-common = { path = "../common" }
+rweb-common = { path = "../rweb-common" }
 log = "*"
 simple_logger = "*"
 clap = {version = "*", features = ["derive"] }

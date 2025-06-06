@@ -11,19 +11,19 @@ edition = "2024"
 default = []
 log = []
 p2ptest = []
-p2p = ["common/p2p"]
+p2p = ["rweb-common/p2p"]
 
 [dependencies]
-tokio = {version = "1.44.2",default-features = false, features = ["rt","rt-multi-thread","time","io-util","net","macros"]}
-quinn = {version = "0.11.7",default-features = false, features = ["rustls-ring","runtime-tokio"]}
+tokio = {version = "1",default-features = false, features = ["rt","rt-multi-thread","time","io-util","net","macros"]}
+quinn = {version = "0",default-features = false, features = ["rustls-ring","runtime-tokio"]}
 rustls = {version = "*"}
 tokio-rustls = {version = "0.26.2"}
-common = { path = "../common" }
+rweb-common = { path = "../rweb-common" }
 url = "*"
 once_cell = "*"
 serde_json = {version = "*"}
 futures = {version = "*"}
 
 [dev-dependencies]
-tokio = {version = "1.44.2", features = ["macros"]}
+tokio = {version = "1.45.0", features = ["macros"]}
 bytes = "*"

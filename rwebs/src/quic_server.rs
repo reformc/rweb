@@ -2,7 +2,7 @@ use std::{
     collections::HashMap, error::Error, net::{IpAddr, Ipv4Addr, SocketAddr}, sync::Arc, time::Duration
 };
 use rustls::pki_types::pem::PemObject;
-use common::{mac::Mac, RwebError};
+use rweb_common::{mac::Mac, RwebError};
 use quinn::{Connection, Endpoint, Incoming, ServerConfig, VarInt};
 use tokio::{io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt}, sync::RwLock, time::timeout};
 #[cfg(feature="p2p")]
@@ -10,7 +10,7 @@ use tokio::select;
 #[cfg(feature="p2p")]
 use quinn::{RecvStream, SendStream};
 #[cfg(feature="p2p")]
-use common::{get_header,Header};
+use rweb_common::{get_header,Header};
 
 const CER_BIN:&[u8] = include_bytes!("../../reform.cer");
 const KEY_BIN:&[u8] = include_bytes!("../../reform.key");
@@ -49,7 +49,7 @@ impl QuicServer{
         let peers = self.peers.read().await;
         if let Some(conn) = peers.get(&mac){
             if let Ok(stream) = conn.open_bi().await{
-                let mut quic_stream = common::io::stream_copy::Stream::new(stream,conn.remote_address());
+                let mut quic_stream = rweb_common::io::stream_copy::Stream::new(stream,conn.remote_address());
                 drop(peers);
                 quic_stream.write(mac.as_ref()).await?;//先告诉节点自己要连接的mac地址
                 tokio::io::copy_bidirectional(&mut tcp_stream, &mut quic_stream).await?;
