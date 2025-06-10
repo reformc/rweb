@@ -1,9 +1,9 @@
 use std::ffi::CStr;
 use std::os::raw::{c_int,c_char};
 use rweb_common::proxy_list::ProxyList;
-use super::quic_client::node_run;
+use rwebc::quic_client::node_run;
 #[cfg(feature="p2p")]
-use common::p2p_list::P2pCell;
+use rweb_common::p2p_list::P2pCell;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn quic_node_run(

@@ -7,6 +7,12 @@ pub struct ProxyList{
     pub url:url::Url,
 }
 
+impl ProxyList {
+    pub fn new(mac: super::mac::Mac, url: url::Url) -> Self {
+        Self { mac, url }
+    }
+}
+
 impl<'de> Deserialize<'de> for ProxyList{
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where

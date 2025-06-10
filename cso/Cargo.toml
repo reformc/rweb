@@ -1,0 +1,20 @@
+[lib]
+name = "cso"
+crate-type = ["cdylib"] 
+
+[package]
+name = "cso"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = []
+log = []
+p2ptest = []
+p2p = ["rweb-common/p2p","rwebc/p2p"]
+
+[dependencies]
+rwebc = { path = "../rwebc" }
+rweb-common = { path = "../rweb-common" }
+serde_json = {version = "*"}
+tokio = {version = "*",default-features = false, features = ["rt","rt-multi-thread"]}

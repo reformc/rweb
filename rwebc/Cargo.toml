@@ -1,7 +1,3 @@
-[lib]
-name = "rwebc"
-crate-type = ["cdylib"] 
-
 [package]
 name = "rwebc"
 version = "0.1.0"
@@ -14,14 +10,14 @@ p2ptest = []
 p2p = ["rweb-common/p2p"]
 
 [dependencies]
-tokio = {version = "1",default-features = false, features = ["rt","rt-multi-thread","time","io-util","net","macros"]}
-quinn = {version = "0",default-features = false, features = ["rustls-ring","runtime-tokio"]}
+tokio = {version = "*",default-features = false, features = ["rt","rt-multi-thread","time","io-util","net","macros"]}
+quinn = {version = "*",default-features = false, features = ["rustls-ring","runtime-tokio"]}
 rustls = {version = "*"}
-tokio-rustls = {version = "0.26.2"}
+tokio-rustls = {version = "*"}
 rweb-common = { path = "../rweb-common" }
 url = "*"
 once_cell = "*"
-serde_json = {version = "*"}
+#serde_json = {version = "*"}
 futures = {version = "*"}
 
 [dev-dependencies]

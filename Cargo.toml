@@ -1,5 +1,5 @@
 [workspace]
-members = [ "cert-key-file", "rweb-common", "p2ptest", "proxy-change-header","rwebc", "rwebc-demo", "rwebs"]
+members = [ "cert-key-file", "rweb-common", "p2ptest", "proxy-change-header","rwebc", "cso", "rwebc-demo", "rwebs"]
 
 resolver = "2"
 
