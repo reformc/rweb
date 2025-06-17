@@ -5,6 +5,7 @@ use rustls::pki_types::pem::PemObject;
 use rweb_common::{mac::Mac, RwebError};
 use quinn::{Connection, Endpoint, Incoming, ServerConfig, VarInt};
 use tokio::{io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt}, sync::RwLock, time::timeout};
+use rweb_common::key::{CER_BIN, KEY_BIN};
 #[cfg(feature="p2p")]
 use tokio::select;
 #[cfg(feature="p2p")]
@@ -12,8 +13,6 @@ use quinn::{RecvStream, SendStream};
 #[cfg(feature="p2p")]
 use rweb_common::{get_header,Header};
 
-const CER_BIN:&[u8] = include_bytes!("../../reform.cer");
-const KEY_BIN:&[u8] = include_bytes!("../../reform.key");
 const KEEPALIVE_INTERVAL_MILLIS:u64=10_000;
 const IDLE_TIMEOUT_MILLIS:u32=21_000;
 
@@ -26,7 +25,7 @@ impl QuicServer{
     
     pub async fn start(&self,port:u16)->Result<(),Box<dyn Error>>{
         let bind_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port);
-        let endpoint = make_server_udp_endpoint(bind_addr,CER_BIN,KEY_BIN)?;
+        let endpoint = make_server_udp_endpoint(bind_addr,CER_BIN.as_bytes(),KEY_BIN.as_bytes())?;
         log::info!("quic server listen on {}",bind_addr);
         loop{
             match endpoint.accept().await{

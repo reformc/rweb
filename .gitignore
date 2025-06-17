@@ -4,3 +4,4 @@
 *.pem
 *.json
 *.txt
+/rweb-common/src/key.rs

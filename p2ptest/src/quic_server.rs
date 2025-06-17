@@ -6,9 +6,11 @@ use std::{
 use rustls::pki_types::pem::PemObject;
 use quinn::{ClientConfig, Endpoint, Incoming, ServerConfig, TransportConfig, VarInt};
 use rweb_common::io::header::write_addr;
+use rweb_common::key::CER_BIN;
+use rweb_common::key::KEY_BIN;
 
-const CER_BIN:&[u8] = include_bytes!("../../reform.cer");
-const KEY_BIN:&[u8] = include_bytes!("../../reform.key");
+//const CER_BIN:&[u8] = include_bytes!("../../reform.cer");
+//const KEY_BIN:&[u8] = include_bytes!("../../reform.key");
 const KEEPALIVE_INTERVAL_MILLIS:u64=10_000;
 const IDLE_TIMEOUT_MILLIS:u32=21_000;
 
@@ -44,8 +46,8 @@ fn configure_host_client(cert_der:&[u8]) -> ClientConfig {
 
 pub async fn run(port:u16){
     let bind_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port);
-    let mut endpoint = make_server_udp_endpoint(bind_addr,CER_BIN,KEY_BIN).unwrap();
-    endpoint.set_default_client_config(configure_host_client(CER_BIN));
+    let mut endpoint = make_server_udp_endpoint(bind_addr,CER_BIN.as_bytes(),KEY_BIN.as_bytes()).unwrap();
+    endpoint.set_default_client_config(configure_host_client(CER_BIN.as_bytes()));
     li(endpoint).await;
 }
     
@@ -85,8 +87,8 @@ mod tests{
     #[tokio::test]
     async fn tt(){
         let bind_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0);
-        let mut endpoint = make_server_udp_endpoint(bind_addr,CER_BIN,KEY_BIN).unwrap();
-        endpoint.set_default_client_config(configure_host_client(CER_BIN));
+        let mut endpoint = make_server_udp_endpoint(bind_addr,CER_BIN.as_bytes(),KEY_BIN.as_bytes()).unwrap();
+        endpoint.set_default_client_config(configure_host_client(CER_BIN.as_bytes()));
         let addr = "127.0.0.1:5678".to_socket_addrs().unwrap().next().unwrap();
         //let li = li(endpoint.clone());
         //tokio::spawn(li);

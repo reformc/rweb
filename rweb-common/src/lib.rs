@@ -5,6 +5,7 @@ pub mod proxy_list;
 pub mod p2p_list;
 use std::error::Error;
 pub use io::header::{get_header,Header};
+pub mod key;
 
 #[derive(Debug,Clone)]
 pub struct RwebError{

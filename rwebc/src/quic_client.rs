@@ -16,10 +16,12 @@ use super::{p2p_client::{DiyTcpListener, P2PListener, P2pListen,p2p_connect}, sy
 use super::p2p_client::p2ptest;
 use super::AsyncReadWrite;
 
+use rweb_common::key::{CER_BIN, KEY_BIN};
+
 const IDLE_TIMEOUT_MILLIS:u32=21_000;
 const KEEPALIVE_INTERVAL_MILLIS:u64=10_000;
-const CER_BIN:&[u8] = include_bytes!("../../reform.cer");
-const KEY_BIN:&[u8] = include_bytes!("../../reform.key");
+//const CER_BIN:&[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../reform.cer"));
+//const KEY_BIN:&[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../reform.key"));
 
 static CONNECTOR:once_cell::sync::Lazy<TlsConnector> = once_cell::sync::Lazy::new(|| {
     let provider = rustls::crypto::ring::default_provider();
@@ -106,9 +108,9 @@ pub async fn run_diy_stream(server_host:&str,server_port:u16,diy_stream:impl Diy
     let server_addr = (server_host, server_port).to_socket_addrs().map_err(|e|RwebError{code:-10,msg:e.to_string()})?.next().ok_or("can't resolve").map_err(|e|RwebError{code:-11,msg:e.to_string()})?;
     let bind_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0);
     let socket = std::net::UdpSocket::bind(bind_addr).map_err(|e|RwebError{code:-10,msg:e.to_string()})?;
-    let server_config = configure_host_server(CER_BIN, KEY_BIN).map_err(|e|RwebError{code:-11,msg:e.to_string()})?;
+    let server_config = configure_host_server(CER_BIN.as_bytes(), KEY_BIN.as_bytes()).map_err(|e|RwebError{code:-11,msg:e.to_string()})?;
     let mut endpoint = Endpoint::new(EndpointConfig::default(), Some(server_config), socket, Arc::new(quinn::TokioRuntime)).map_err(|e|RwebError{code:-12,msg:e.to_string()})?;
-    endpoint.set_default_client_config(configure_host_client(CER_BIN));//客户端服务端共用一个socket
+    endpoint.set_default_client_config(configure_host_client(CER_BIN.as_bytes()));//客户端服务端共用一个socket
     let conn = endpoint.connect(server_addr, "reform").map_err(|e|RwebError{code:-13,msg:e.to_string()})?;
     let connection = conn.await.map_err(|e|RwebError{code:-14,msg:e.to_string()})?;
     let mut uni_stream = connection.open_uni().await.map_err(|e|RwebError{code:-15,msg:e.to_string()})?;
